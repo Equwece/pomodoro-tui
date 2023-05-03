@@ -7,7 +7,9 @@ maintainer:         99554597+Equwece@users.noreply.github.com
 extra-source-files: CHANGELOG.md
 
 library
-    exposed-modules:  Core
+    exposed-modules:  
+      Core
+      Utils
     build-depends:    
       base >=4.15.1.0,
       vty,
@@ -16,6 +18,8 @@ library
       microlens,
       microlens-mtl,
       vector,
+      dbus,
+      containers,
       brick
     hs-source-dirs:   src
     default-language: Haskell2010
@@ -27,6 +31,8 @@ executable pomodoro-tui
         base >=4.15.1.0,
         brick,
         vty,
+        dbus,
+        containers,
         pomodoro-tui
 
     hs-source-dirs:   app

@@ -1,6 +1,8 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Main where
 
-import Brick
+import Brick (customMain)
 import Brick.BChan (newBChan, writeBChan)
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Monad (forever, void)

@@ -17,9 +17,11 @@ import Brick
   )
 import Brick.Widgets.List (GenericList (listSelected), handleListEvent, handleListEventVi, list, renderList)
 import Control.Lens
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.Vector (Vector, fromList)
 import qualified Graphics.Vty as V
 import Graphics.Vty.Attributes (defAttr)
+import Utils (sendNotification)
 
 data AppState = AppState
   { _workTime :: Int,
@@ -57,29 +59,30 @@ renderCurrentTimer currentTime = minutes <> ":" <> seconds
     seconds = show $ mod currentTime 60
 
 handleEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
-handleEvent currentState (AppEvent Second) = do
-  continue $ handleSecond currentState
+handleEvent currentState (AppEvent Second) = handleSecond currentState
 handleEvent currentState be@(VtyEvent ve) = case ve of
   (V.EvKey (V.KChar 'j') []) -> handleControlListEvents currentState ve
   (V.EvKey (V.KChar 'k') []) -> handleControlListEvents currentState ve
-  (V.EvKey V.KEnter []) -> continue $ handleControlListSelect currentState
+  (V.EvKey V.KEnter []) -> handleControlListSelect currentState
   (V.EvKey (V.KChar 'q') []) -> resizeOrQuit currentState be
   _ -> continue currentState
 handleEvent currentState _ = continue currentState
 
-handleControlListSelect :: AppState -> AppState
+handleControlListSelect :: AppState -> EventM String (Next AppState)
 handleControlListSelect currentState = case selectedElement of
+  -- "Stop" button is pressed
   Just 0 -> case currentState ^. currentPomodoroState of
-    Pause (Pause _) -> currentState
-    Pause a -> currentState & currentPomodoroState .~ a
-    b -> currentState & currentPomodoroState .~ Pause b
+    Pause (Pause _) -> continue currentState
+    Pause a -> continue $ currentState & currentPomodoroState .~ a
+    b -> continue $ currentState & currentPomodoroState .~ Pause b
+  -- "Next" button is pressed
   Just 1 -> case currentState ^. currentPomodoroState of
-    Pause Work -> setPomodoroRest currentState
-    Pause Rest -> setPomodoroWork currentState
-    Work -> setPomodoroRest currentState
-    Rest -> setPomodoroWork currentState
-    _ -> currentState
-  _ -> currentState
+    Pause Work -> setPomodoroRest currentState >>= continue
+    Pause Rest -> setPomodoroWork currentState >>= continue
+    Work -> setPomodoroRest currentState >>= continue
+    Rest -> setPomodoroWork currentState >>= continue
+    _ -> continue currentState
+  _ -> continue currentState
   where
     selectedElement = listSelected (currentState ^. currentControlList)
 
@@ -88,26 +91,32 @@ handleControlListEvents currentState ve = do
   newControlList <- handleListEventVi handleListEvent ve controlList
   continue (currentState & currentControlList .~ newControlList)
 
-handleSecond :: AppState -> AppState
+handleSecond :: AppState -> EventM String (Next AppState)
 handleSecond currentState = case currentState ^. currentPomodoroState of
-  Pause _ -> currentState
+  Pause _ -> continue currentState
   _ -> case currentState ^. currentTimer of
-    0 -> decreasePomodoroTimer . decideNewPomodoroState $ currentState
+    0 -> do
+      newPomodoroState <- decideNewPomodoroState currentState
+      decreasePomodoroTimer newPomodoroState
     _ -> decreasePomodoroTimer currentState
 
-decideNewPomodoroState :: AppState -> AppState
+decideNewPomodoroState :: AppState -> EventM String AppState
 decideNewPomodoroState currentState = case currentState ^. currentPomodoroState of
   Work -> setPomodoroRest currentState
   _ -> setPomodoroWork currentState
 
-setPomodoroRest :: AppState -> AppState
-setPomodoroRest currentState = currentState & currentPomodoroState .~ Rest & currentTimer .~ (currentState ^. restTime)
+setPomodoroRest :: AppState -> EventM String AppState
+setPomodoroRest currentState = do
+  _ <- liftIO $ sendNotification ("Time to Rest: " <> renderCurrentTimer (currentState ^. restTime))
+  return $ currentState & currentPomodoroState .~ Rest & currentTimer .~ currentState ^. restTime
 
-setPomodoroWork :: AppState -> AppState
-setPomodoroWork currentState = currentState & currentPomodoroState .~ Work & currentTimer .~ (currentState ^. workTime)
+setPomodoroWork :: AppState -> EventM String AppState
+setPomodoroWork currentState = do
+  _ <- liftIO $ sendNotification ("Time to Work: " <> renderCurrentTimer (currentState ^. workTime))
+  return $ currentState & currentPomodoroState .~ Work & currentTimer .~ currentState ^. workTime
 
-decreasePomodoroTimer :: AppState -> AppState
-decreasePomodoroTimer currentState = currentState & currentTimer -~ 1
+decreasePomodoroTimer :: AppState -> EventM String (Next AppState)
+decreasePomodoroTimer currentState = continue $ currentState & currentTimer -~ 1
 
 data PomodoroEvent = Second
 
