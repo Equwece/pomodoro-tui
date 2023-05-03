@@ -1,5 +1,5 @@
 cabal-version:      2.4
-name:               console-pomodoro
+name:               pomodoro-tui
 version:            0.1.0.0
 license:            LGPL-3.0-only
 author:             Equwece
@@ -15,18 +15,19 @@ library
       mtl,
       microlens,
       microlens-mtl,
+      vector,
       brick
     hs-source-dirs:   src
     default-language: Haskell2010
     ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded
 
-executable console-pomodoro
+executable pomodoro-tui
     main-is:          Main.hs
     build-depends:
         base >=4.15.1.0,
         brick,
         vty,
-        console-pomodoro
+        pomodoro-tui
 
     hs-source-dirs:   app
     default-language: Haskell2010

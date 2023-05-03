@@ -9,7 +9,7 @@ let
   myNixPkgsOverlay = (nixSelf: nixSuper: {
     myHaskellPackages = nixSelf.haskell.packages."${compiler}".override (oldHaskellPkgs: {
       overrides = haskellPackagesNew: oldHaskellPkgs: rec {
-        myProject = haskellPackagesNew.callCabal2nix "console-pomodoro" ./. {};
+        myProject = haskellPackagesNew.callCabal2nix "pomodoro-tui" ./. {};
       };
     });
   });

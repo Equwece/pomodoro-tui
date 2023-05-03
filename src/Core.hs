@@ -1,6 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module Core where
+module Core (createApp, initialAppState, PomodoroEvent (..)) where
 
 import Brick
   ( App (..),
@@ -15,7 +15,10 @@ import Brick
     str,
     (<=>),
   )
+import Brick.Widgets.List (GenericList (listSelected), handleListEvent, handleListEventVi, list, renderList)
 import Control.Lens
+import Data.Vector (Vector, fromList)
+import qualified Graphics.Vty as V
 import Graphics.Vty.Attributes (defAttr)
 
 data AppState = AppState
@@ -23,18 +26,28 @@ data AppState = AppState
     _restTime :: Int,
     _longRestTime :: Maybe Int,
     _currentPomodoroState :: PomodoroState,
-    _currentTimer :: Int
+    _currentTimer :: Int,
+    _currentControlList :: GenericList String Vector String
   }
-  deriving (Eq, Show)
+  deriving (Show)
 
-data PomodoroState = Work | Rest | LongRest deriving (Eq, Show)
+data PomodoroState = Work | Rest | LongRest | Pause PomodoroState deriving (Eq, Show)
 
 makeLenses ''AppState
 
-drawUI :: AppState -> [Widget ()]
+controlList :: GenericList String Vector String
+controlList = list "ControlList" (fromList ["Stop", "Next"]) 1
+
+renderControlListItem :: Bool -> String -> Widget String
+renderControlListItem isSelected button = str (button <> selectMark)
+  where
+    selectMark = if isSelected then " *" else ""
+
+drawUI :: AppState -> [Widget String]
 drawUI currentState =
   [ str (renderCurrentTimer $ currentState ^. currentTimer)
       <=> str (show $ currentState ^. currentPomodoroState)
+      <=> renderList renderControlListItem True (currentState ^. currentControlList)
   ]
 
 renderCurrentTimer :: Int -> String
@@ -43,42 +56,78 @@ renderCurrentTimer currentTime = minutes <> ":" <> seconds
     minutes = show $ div currentTime 60
     seconds = show $ mod currentTime 60
 
-handleEvent :: AppState -> BrickEvent n PomodoroEvent -> EventM n (Next AppState)
+handleEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
 handleEvent currentState (AppEvent Second) = do
-  continue $ getNewState currentState
-handleEvent currentState be = resizeOrQuit currentState be
+  continue $ handleSecond currentState
+handleEvent currentState be@(VtyEvent ve) = case ve of
+  (V.EvKey (V.KChar 'j') []) -> handleControlListEvents currentState ve
+  (V.EvKey (V.KChar 'k') []) -> handleControlListEvents currentState ve
+  (V.EvKey V.KEnter []) -> continue $ handleControlListSelect currentState
+  (V.EvKey (V.KChar 'q') []) -> resizeOrQuit currentState be
+  _ -> continue currentState
+handleEvent currentState _ = continue currentState
 
-getNewState :: AppState -> AppState
-getNewState currentState = case currentState ^. currentTimer of
-  0 -> decreasePomodoroTimer . decideNewPomodoroState $ currentState
-  _ -> decreasePomodoroTimer currentState
+handleControlListSelect :: AppState -> AppState
+handleControlListSelect currentState = case selectedElement of
+  Just 0 -> case currentState ^. currentPomodoroState of
+    Pause (Pause _) -> currentState
+    Pause a -> currentState & currentPomodoroState .~ a
+    b -> currentState & currentPomodoroState .~ Pause b
+  Just 1 -> case currentState ^. currentPomodoroState of
+    Pause Work -> setPomodoroRest currentState
+    Pause Rest -> setPomodoroWork currentState
+    Work -> setPomodoroRest currentState
+    Rest -> setPomodoroWork currentState
+    _ -> currentState
+  _ -> currentState
+  where
+    selectedElement = listSelected (currentState ^. currentControlList)
+
+handleControlListEvents :: AppState -> V.Event -> EventM String (Next AppState)
+handleControlListEvents currentState ve = do
+  newControlList <- handleListEventVi handleListEvent ve controlList
+  continue (currentState & currentControlList .~ newControlList)
+
+handleSecond :: AppState -> AppState
+handleSecond currentState = case currentState ^. currentPomodoroState of
+  Pause _ -> currentState
+  _ -> case currentState ^. currentTimer of
+    0 -> decreasePomodoroTimer . decideNewPomodoroState $ currentState
+    _ -> decreasePomodoroTimer currentState
 
 decideNewPomodoroState :: AppState -> AppState
 decideNewPomodoroState currentState = case currentState ^. currentPomodoroState of
-  Work -> currentState & currentPomodoroState .~ Rest & currentTimer .~ (currentState ^. restTime)
-  _ -> currentState & currentPomodoroState .~ Work & currentTimer .~ (currentState ^. workTime)
+  Work -> setPomodoroRest currentState
+  _ -> setPomodoroWork currentState
+
+setPomodoroRest :: AppState -> AppState
+setPomodoroRest currentState = currentState & currentPomodoroState .~ Rest & currentTimer .~ (currentState ^. restTime)
+
+setPomodoroWork :: AppState -> AppState
+setPomodoroWork currentState = currentState & currentPomodoroState .~ Work & currentTimer .~ (currentState ^. workTime)
 
 decreasePomodoroTimer :: AppState -> AppState
 decreasePomodoroTimer currentState = currentState & currentTimer -~ 1
 
 data PomodoroEvent = Second
 
-createApp :: App AppState PomodoroEvent ()
+createApp :: App AppState PomodoroEvent String
 createApp =
   App
     { appDraw = drawUI,
       appHandleEvent = handleEvent,
-      appStartEvent = \_ -> return initalAppState,
+      appStartEvent = \_ -> return initialAppState,
       appAttrMap = const $ attrMap defAttr [],
       appChooseCursor = neverShowCursor
     }
 
-initalAppState :: AppState
-initalAppState =
+initialAppState :: AppState
+initialAppState =
   AppState
     { _workTime = 1500,
       _restTime = 300,
       _longRestTime = Just 900,
       _currentPomodoroState = Work,
-      _currentTimer = 1500
+      _currentTimer = 1500,
+      _currentControlList = controlList
     }
