@@ -10,11 +10,16 @@ import Brick
     Widget,
     attrMap,
     continue,
+    hLimit,
     neverShowCursor,
     resizeOrQuit,
     str,
+    vBox,
+    vLimit,
     (<=>),
   )
+import Brick.Widgets.Border (border)
+import Brick.Widgets.Center (center, hCenter)
 import Brick.Widgets.List (GenericList (listSelected), handleListEvent, handleListEventVi, list, renderList)
 import Control.Lens
 import Control.Monad.IO.Class (MonadIO (liftIO))
@@ -41,15 +46,20 @@ controlList :: GenericList String Vector String
 controlList = list "ControlList" (fromList ["Stop", "Next"]) 1
 
 renderControlListItem :: Bool -> String -> Widget String
-renderControlListItem isSelected button = str (button <> selectMark)
+renderControlListItem isSelected button = hCenter $ str (leftMark <> button <> rightMark)
   where
-    selectMark = if isSelected then " *" else ""
+    (leftMark, rightMark) = if isSelected then ("* ", " *") else ("", "")
 
 drawUI :: AppState -> [Widget String]
 drawUI currentState =
-  [ str (renderCurrentTimer $ currentState ^. currentTimer)
-      <=> str (show $ currentState ^. currentPomodoroState)
-      <=> renderList renderControlListItem True (currentState ^. currentControlList)
+  [ vBox
+      [ center . border $
+          vBox . map (hLimit 20 . hCenter) $
+            [ str (renderCurrentTimer $ currentState ^. currentTimer),
+              str (show $ currentState ^. currentPomodoroState)
+            ],
+        vLimit 15 $ renderList renderControlListItem True (currentState ^. currentControlList)
+      ]
   ]
 
 renderCurrentTimer :: Int -> String
