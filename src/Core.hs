@@ -16,7 +16,6 @@ import Brick
     str,
     vBox,
     vLimit,
-    (<=>),
   )
 import Brick.Widgets.Border (border)
 import Brick.Widgets.Center (center, hCenter)
@@ -42,8 +41,12 @@ data PomodoroState = Work | Rest | LongRest | Pause PomodoroState deriving (Eq, 
 
 makeLenses ''AppState
 
-controlList :: GenericList String Vector String
-controlList = list "ControlList" (fromList ["Stop", "Next"]) 1
+makeControlList :: PomodoroState -> GenericList String Vector String
+makeControlList pomodoroState = list "ControlList" (fromList [toggleStopLabel, "Next"]) 1
+  where
+    toggleStopLabel = case pomodoroState of
+      Pause _ -> "Continue"
+      _ -> "Stop"
 
 renderControlListItem :: Bool -> String -> Widget String
 renderControlListItem isSelected button = hCenter $ str (leftMark <> button <> rightMark)
@@ -73,7 +76,10 @@ handleEvent currentState (AppEvent Second) = handleSecond currentState
 handleEvent currentState be@(VtyEvent ve) = case ve of
   (V.EvKey (V.KChar 'j') []) -> handleControlListEvents currentState ve
   (V.EvKey (V.KChar 'k') []) -> handleControlListEvents currentState ve
+  (V.EvKey V.KUp []) -> handleControlListEvents currentState ve
+  (V.EvKey V.KDown []) -> handleControlListEvents currentState ve
   (V.EvKey V.KEnter []) -> handleControlListSelect currentState
+  (V.EvKey (V.KChar ' ') []) -> handleControlListSelect currentState
   (V.EvKey (V.KChar 'q') []) -> resizeOrQuit currentState be
   _ -> continue currentState
 handleEvent currentState _ = continue currentState
@@ -83,8 +89,8 @@ handleControlListSelect currentState = case selectedElement of
   -- "Stop" button is pressed
   Just 0 -> case currentState ^. currentPomodoroState of
     Pause (Pause _) -> continue currentState
-    Pause a -> continue $ currentState & currentPomodoroState .~ a
-    b -> continue $ currentState & currentPomodoroState .~ Pause b
+    Pause a -> continue $ currentState & currentPomodoroState .~ a & currentControlList .~ makeControlList a
+    b -> continue $ currentState & currentPomodoroState .~ Pause b & currentControlList .~ makeControlList (Pause b)
   -- "Next" button is pressed
   Just 1 -> case currentState ^. currentPomodoroState of
     Pause Work -> setPomodoroRest currentState >>= continue
@@ -98,7 +104,7 @@ handleControlListSelect currentState = case selectedElement of
 
 handleControlListEvents :: AppState -> V.Event -> EventM String (Next AppState)
 handleControlListEvents currentState ve = do
-  newControlList <- handleListEventVi handleListEvent ve controlList
+  newControlList <- handleListEventVi handleListEvent ve (makeControlList (currentState ^. currentPomodoroState))
   continue (currentState & currentControlList .~ newControlList)
 
 handleSecond :: AppState -> EventM String (Next AppState)
@@ -148,5 +154,5 @@ initialAppState =
       _longRestTime = Just 900,
       _currentPomodoroState = Work,
       _currentTimer = 1500,
-      _currentControlList = controlList
+      _currentControlList = makeControlList Work
     }
