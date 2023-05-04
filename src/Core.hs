@@ -7,17 +7,22 @@ import Brick
     BrickEvent (..),
     EventM (..),
     Next,
+    Padding (Pad),
     Widget,
     attrMap,
     continue,
     hLimit,
     neverShowCursor,
+    padBottom,
+    padTop,
     resizeOrQuit,
     str,
     vBox,
     vLimit,
+    withBorderStyle,
   )
 import Brick.Widgets.Border (border)
+import Brick.Widgets.Border.Style (unicodeRounded)
 import Brick.Widgets.Center (center, hCenter)
 import Brick.Widgets.List (GenericList (listSelected), handleListEvent, handleListEventVi, list, renderList)
 import Control.Lens
@@ -51,15 +56,15 @@ makeControlList pomodoroState = list "ControlList" (fromList [toggleStopLabel, "
 renderControlListItem :: Bool -> String -> Widget String
 renderControlListItem isSelected button = hCenter $ str (leftMark <> button <> rightMark)
   where
-    (leftMark, rightMark) = if isSelected then ("* ", " *") else ("", "")
+    (leftMark, rightMark) = if isSelected then ("< ", " >") else ("", "")
 
 drawUI :: AppState -> [Widget String]
 drawUI currentState =
   [ vBox
-      [ center . border $
+      [ center . withBorderStyle unicodeRounded . border $
           vBox . map (hLimit 20 . hCenter) $
-            [ str (renderCurrentTimer $ currentState ^. currentTimer),
-              str (show $ currentState ^. currentPomodoroState)
+            [ padTop (Pad 2) $ str (renderCurrentTimer $ currentState ^. currentTimer),
+              padBottom (Pad 2) $ str (show $ currentState ^. currentPomodoroState)
             ],
         vLimit 15 $ renderList renderControlListItem True (currentState ^. currentControlList)
       ]
@@ -68,8 +73,11 @@ drawUI currentState =
 renderCurrentTimer :: Int -> String
 renderCurrentTimer currentTime = minutes <> ":" <> seconds
   where
-    minutes = show $ div currentTime 60
-    seconds = show $ mod currentTime 60
+    minutes = renderTime . show $ div currentTime 60
+    seconds = renderTime . show $ mod currentTime 60
+    renderTime t = case t of
+      [_] -> '0' : t
+      _ -> t
 
 handleEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
 handleEvent currentState (AppEvent Second) = handleSecond currentState
