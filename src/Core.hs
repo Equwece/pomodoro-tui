@@ -1,7 +1,7 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Core (createApp, initialAppState, setAppProfile) where
+module Core (createApp, initialAppState, setAppProfile, buildInitState) where
 
 import Brick
   ( App (..),
@@ -28,18 +28,26 @@ import Brick.Widgets.Center (center, hCenter)
 import Brick.Widgets.List (GenericList (listSelected), handleListEvent, handleListEventVi, list, renderList)
 import Control.Lens ((&), (-~), (.~), (^.))
 import Control.Monad.IO.Class (MonadIO (liftIO))
+import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Maybe (fromMaybe)
+import Data.UUID (UUID)
 import Data.Vector (Vector, fromList)
 import qualified Graphics.Vty as V
 import Graphics.Vty.Attributes (defAttr)
 import Types
   ( AppState (..),
+    Page (Main, Profiles),
     PomodoroEvent (..),
     PomodoroState (Pause, Rest, Work),
     Profile (..),
+    ProfileContainer (currentProfileId, profiles),
+    appPage,
+    appProfiles,
     currentControlList,
     currentPomodoroState,
     currentProfile,
+    currentProfileList,
     currentTimer,
     defaultAppProfile,
     profileId,
@@ -55,13 +63,31 @@ makeControlList pomodoroState = list "ControlList" (fromList [toggleStopLabel, "
       Pause _ -> "Continue"
       _ -> "Stop"
 
+makeProfileList :: Map UUID Profile -> GenericList String Vector String
+makeProfileList state = list "ControlList" (fromList (map renderProfileItem $ getProfileListFromMap state)) 1
+
+renderProfileItem :: Profile -> String
+renderProfileItem profile =
+  "Profile "
+    <> renderCurrentTimer (profile ^. workTime)
+    <> "/"
+    <> renderCurrentTimer (profile ^. restTime)
+
+getProfileListFromMap :: Map UUID Profile -> [Profile]
+getProfileListFromMap = map snd . M.toList
+
 renderControlListItem :: Bool -> String -> Widget String
 renderControlListItem isSelected button = hCenter $ str (leftMark <> button <> rightMark)
   where
     (leftMark, rightMark) = if isSelected then ("< ", " >") else ("", "")
 
 drawUI :: AppState -> [Widget String]
-drawUI currentState =
+drawUI currentState = case currentState ^. appPage of
+  Profiles -> renderProfilePage currentState
+  _ -> renderMainPage currentState
+
+renderMainPage :: AppState -> [Widget String]
+renderMainPage currentState =
   [ vBox
       [ center . withBorderStyle unicodeRounded . border $
           vBox . map (hLimit 20 . hCenter) $
@@ -70,6 +96,14 @@ drawUI currentState =
             ],
         vLimit 15 $ renderList renderControlListItem True (currentState ^. currentControlList)
       ]
+  ]
+
+renderProfilePage :: AppState -> [Widget String]
+renderProfilePage currentState =
+  [ center $
+      vBox
+        [ vLimit 15 $ renderList renderControlListItem True (currentState ^. currentProfileList)
+        ]
   ]
 
 renderCurrentTimer :: Int -> String
@@ -82,17 +116,38 @@ renderCurrentTimer currentTime = minutes <> ":" <> seconds
       _ -> t
 
 handleEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
-handleEvent currentState (AppEvent Second) = handleSecond currentState
-handleEvent currentState be@(VtyEvent ve) = case ve of
+handleEvent currentState event = case currentState ^. appPage of
+  Profiles -> handleProfilePageEvent currentState event
+  Main -> handleMainPageEvent currentState event
+  _ -> handleGenericPageEvent currentState event
+
+handleMainPageEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
+handleMainPageEvent currentState (AppEvent Second) = handleSecond currentState
+handleMainPageEvent currentState event@(VtyEvent ve) = case ve of
   (V.EvKey (V.KChar 'j') []) -> handleControlListEvents currentState ve
   (V.EvKey (V.KChar 'k') []) -> handleControlListEvents currentState ve
   (V.EvKey V.KUp []) -> handleControlListEvents currentState ve
   (V.EvKey V.KDown []) -> handleControlListEvents currentState ve
   (V.EvKey V.KEnter []) -> handleControlListSelect currentState
   (V.EvKey (V.KChar ' ') []) -> handleControlListSelect currentState
+  _ -> handleGenericPageEvent currentState event
+handleMainPageEvent currentState event = handleGenericPageEvent currentState event
+
+handleProfilePageEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
+handleProfilePageEvent currentState (AppEvent Second) = handleSecond currentState
+handleProfilePageEvent currentState event@(VtyEvent ve) = case ve of
+  (V.EvKey (V.KChar 'j') []) -> handleProfileListEvents currentState ve
+  (V.EvKey (V.KChar 'k') []) -> handleProfileListEvents currentState ve
+  (V.EvKey V.KUp []) -> handleProfileListEvents currentState ve
+  (V.EvKey V.KDown []) -> handleProfileListEvents currentState ve
+  _ -> handleGenericPageEvent currentState event
+handleProfilePageEvent currentState event = handleGenericPageEvent currentState event
+
+handleGenericPageEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
+handleGenericPageEvent currentState be@(VtyEvent ve) = case ve of
   (V.EvKey (V.KChar 'q') []) -> resizeOrQuit currentState be
   _ -> continue currentState
-handleEvent currentState _ = continue currentState
+handleGenericPageEvent currentState _ = continue currentState
 
 handleControlListSelect :: AppState -> EventM String (Next AppState)
 handleControlListSelect currentState = case selectedElement of
@@ -116,6 +171,11 @@ handleControlListEvents :: AppState -> V.Event -> EventM String (Next AppState)
 handleControlListEvents currentState ve = do
   newControlList <- handleListEventVi handleListEvent ve (makeControlList (currentState ^. currentPomodoroState))
   continue (currentState & currentControlList .~ newControlList)
+
+handleProfileListEvents :: AppState -> V.Event -> EventM String (Next AppState)
+handleProfileListEvents currentState ve = do
+  newControlList <- handleListEventVi handleListEvent ve (makeProfileList (currentState ^. appProfiles))
+  continue (currentState & currentProfileList .~ newControlList)
 
 handleSecond :: AppState -> EventM String (Next AppState)
 handleSecond currentState = case currentState ^. currentPomodoroState of
@@ -148,6 +208,19 @@ setAppProfile newProfile state =
     & currentPomodoroState .~ Work
     & currentTimer .~ (newProfile ^. workTime)
 
+buildInitState :: ProfileContainer -> AppState
+buildInitState profileContainer =
+  initialAppState
+    & currentProfile .~ chosenProfile
+    & currentPomodoroState .~ Work
+    & currentTimer .~ (chosenProfile ^. workTime)
+    & appProfiles .~ profiles profileContainer
+    & currentProfileList .~ profileList
+  where
+    loadedProfiles = profiles profileContainer
+    chosenProfile = fromMaybe defaultAppProfile (M.lookup (currentProfileId profileContainer) loadedProfiles)
+    profileList = makeProfileList loadedProfiles
+
 decreasePomodoroTimer :: AppState -> EventM String (Next AppState)
 decreasePomodoroTimer currentState = continue $ currentState & currentTimer -~ 1
 
@@ -167,6 +240,8 @@ initialAppState =
     { _currentPomodoroState = Work,
       _currentTimer = 1500,
       _currentControlList = makeControlList Work,
+      _currentProfileList = makeProfileList (M.fromList [(defaultAppProfile ^. profileId, defaultAppProfile)]),
       _currentProfile = defaultAppProfile,
-      _appProfiles = M.fromList [(defaultAppProfile ^. profileId, defaultAppProfile)]
+      _appProfiles = M.fromList [(defaultAppProfile ^. profileId, defaultAppProfile)],
+      _appPage = Profiles
     }

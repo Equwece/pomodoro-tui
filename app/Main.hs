@@ -7,7 +7,7 @@ import Brick.BChan (newBChan, writeBChan)
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Lens ((&), (.~))
 import Control.Monad (forever, void)
-import Core (createApp, initialAppState, setAppProfile)
+import Core (createApp, initialAppState, setAppProfile, buildInitState)
 import Data.Either (fromRight)
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
@@ -26,11 +26,8 @@ main = do
   profileContainer <- fromRight defaultProfileContainer <$> loadProfileConfig
   let app = createApp
       buildVty = V.mkVty V.defaultConfig
-      chosenProfile = fromMaybe defaultAppProfile (M.lookup (currentProfileId profileContainer) (profiles profileContainer))
-      state =
-        setAppProfile chosenProfile $
-          initialAppState
-            & appProfiles .~ profiles profileContainer
+      state = buildInitState profileContainer
+  print state
   initialVty <- buildVty
   eventChan <- newBChan 10
   _ <- forkIO $ forever $ do

@@ -15,10 +15,14 @@ data AppState = AppState
   { _currentPomodoroState :: PomodoroState,
     _currentTimer :: Int,
     _currentControlList :: GenericList String Vector String,
+    _currentProfileList :: GenericList String Vector String,
     _currentProfile :: Profile,
-    _appProfiles :: Map UUID Profile
+    _appProfiles :: Map UUID Profile,
+    _appPage :: Page
   }
   deriving (Show)
+
+data Page = Main | Profiles | ProfileEditor deriving (Show)
 
 data Profile = Profile
   { _workTime :: Int,
