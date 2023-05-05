@@ -41,7 +41,7 @@ import Types
     PomodoroEvent (..),
     PomodoroState (Pause, Rest, Work),
     Profile (..),
-    ProfileContainer (currentProfileId, profiles),
+    ProfileContainer (ProfileContainer, currentProfileId, profiles),
     appPage,
     appProfiles,
     currentControlList,
@@ -54,10 +54,10 @@ import Types
     restTime,
     workTime,
   )
-import Utils (sendNotification)
+import Utils (saveProfileConfig, sendNotification)
 
 makeControlList :: PomodoroState -> GenericList String Vector String
-makeControlList pomodoroState = list "ControlList" (fromList [toggleStopLabel, "Next"]) 1
+makeControlList pomodoroState = list "ControlList" (fromList [toggleStopLabel, "Next", "Profiles"]) 1
   where
     toggleStopLabel = case pomodoroState of
       Pause _ -> "Continue"
@@ -130,7 +130,8 @@ handleMainPageEvent currentState event@(VtyEvent ve) = case ve of
   (V.EvKey V.KDown []) -> handleControlListEvents currentState ve
   (V.EvKey V.KEnter []) -> handleControlListSelect currentState
   (V.EvKey (V.KChar ' ') []) -> handleControlListSelect currentState
-  _ -> handleGenericPageEvent currentState event
+  _ -> do
+    handleGenericPageEvent currentState event
 handleMainPageEvent currentState event = handleGenericPageEvent currentState event
 
 handleProfilePageEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
@@ -140,7 +141,12 @@ handleProfilePageEvent currentState event@(VtyEvent ve) = case ve of
   (V.EvKey (V.KChar 'k') []) -> handleProfileListEvents currentState ve
   (V.EvKey V.KUp []) -> handleProfileListEvents currentState ve
   (V.EvKey V.KDown []) -> handleProfileListEvents currentState ve
-  _ -> handleGenericPageEvent currentState event
+  (V.EvKey V.KEnter []) -> handleProfileListSelect currentState
+  (V.EvKey (V.KChar ' ') []) -> handleProfileListSelect currentState
+  (V.EvKey V.KEsc []) -> continue (currentState & appPage .~ Main)
+  (V.EvKey (V.KChar 'd') []) -> handleProfileListDelete currentState
+  _ -> do
+    handleGenericPageEvent currentState event
 handleProfilePageEvent currentState event = handleGenericPageEvent currentState event
 
 handleGenericPageEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
@@ -163,19 +169,66 @@ handleControlListSelect currentState = case selectedElement of
     Work -> setPomodoroRest currentState >>= continue
     Rest -> setPomodoroWork currentState >>= continue
     _ -> continue currentState
+  Just 2 -> continue (currentState & appPage .~ Profiles)
   _ -> continue currentState
   where
     selectedElement = listSelected (currentState ^. currentControlList)
 
+handleProfileListSelect :: AppState -> EventM String (Next AppState)
+handleProfileListSelect currentState = do
+  case selectedElement of
+    Just profileNum -> do
+      let profileContainer =
+            ProfileContainer
+              (currentState ^. appProfiles)
+              ((profileList !! profileNum) ^. profileId)
+      liftIO $ saveProfileConfig profileContainer
+      continue (setAppProfile (profileList !! profileNum) currentState & appPage .~ Main)
+    Nothing -> continue currentState
+  where
+    profileList = getProfileListFromMap (currentState ^. appProfiles)
+    selectedElement = listSelected (currentState ^. currentProfileList)
+
+handleProfileListDelete :: AppState -> EventM String (Next AppState)
+handleProfileListDelete currentState = do
+  if M.size (currentState ^. appProfiles) <= 1
+    then continue currentState
+    else do
+      case selectedElement of
+        Just profileNum -> do
+          let profile = profileList !! profileNum
+              newAppProfiles = M.delete (profile ^. profileId) (currentState ^. appProfiles)
+              newAppProfileList = getProfileListFromMap newAppProfiles
+              newUIProfileList = makeProfileList newAppProfiles
+              newProfile
+                | currentState ^. currentProfile == profile = head newAppProfileList
+                | otherwise = currentState ^. currentProfile
+              profileContainer =
+                ProfileContainer
+                  newAppProfiles
+                  (newProfile ^. profileId)
+          liftIO $ saveProfileConfig profileContainer
+          continue
+            ( setAppProfile newProfile currentState
+                & appProfiles .~ newAppProfiles
+                & currentProfileList .~ newUIProfileList
+            )
+        Nothing -> continue currentState
+  where
+    profileList = getProfileListFromMap (currentState ^. appProfiles)
+    selectedElement = listSelected (currentState ^. currentProfileList)
+
 handleControlListEvents :: AppState -> V.Event -> EventM String (Next AppState)
 handleControlListEvents currentState ve = do
-  newControlList <- handleListEventVi handleListEvent ve (makeControlList (currentState ^. currentPomodoroState))
+  let controlList = currentState ^. currentControlList
+  newControlList <- handleListEventVi handleListEvent ve controlList
   continue (currentState & currentControlList .~ newControlList)
 
 handleProfileListEvents :: AppState -> V.Event -> EventM String (Next AppState)
 handleProfileListEvents currentState ve = do
-  newControlList <- handleListEventVi handleListEvent ve (makeProfileList (currentState ^. appProfiles))
-  continue (currentState & currentProfileList .~ newControlList)
+  let profileList = currentState ^. currentProfileList
+  newProfileList <- handleListEventVi handleListEvent ve profileList
+  continue (currentState & currentProfileList .~ newProfileList)
 
 handleSecond :: AppState -> EventM String (Next AppState)
 handleSecond currentState = case currentState ^. currentPomodoroState of
@@ -243,5 +296,5 @@ initialAppState =
       _currentProfileList = makeProfileList (M.fromList [(defaultAppProfile ^. profileId, defaultAppProfile)]),
       _currentProfile = defaultAppProfile,
       _appProfiles = M.fromList [(defaultAppProfile ^. profileId, defaultAppProfile)],
-      _appPage = Profiles
+      _appPage = Main
     }

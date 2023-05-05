@@ -27,7 +27,6 @@ main = do
   let app = createApp
       buildVty = V.mkVty V.defaultConfig
       state = buildInitState profileContainer
-  print state
   initialVty <- buildVty
   eventChan <- newBChan 10
   _ <- forkIO $ forever $ do

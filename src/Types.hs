@@ -31,7 +31,7 @@ data Profile = Profile
     _profileId :: UUID,
     _longRestCount :: Maybe Int
   }
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance ToJSON Profile
 
