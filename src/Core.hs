@@ -1,6 +1,7 @@
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module Core (createApp, initialAppState, PomodoroEvent (..)) where
+module Core (createApp, initialAppState, setAppProfile) where
 
 import Brick
   ( App (..),
@@ -25,26 +26,27 @@ import Brick.Widgets.Border (border)
 import Brick.Widgets.Border.Style (unicodeRounded)
 import Brick.Widgets.Center (center, hCenter)
 import Brick.Widgets.List (GenericList (listSelected), handleListEvent, handleListEventVi, list, renderList)
-import Control.Lens
+import Control.Lens ((&), (-~), (.~), (^.))
 import Control.Monad.IO.Class (MonadIO (liftIO))
+import qualified Data.Map as M
 import Data.Vector (Vector, fromList)
 import qualified Graphics.Vty as V
 import Graphics.Vty.Attributes (defAttr)
+import Types
+  ( AppState (..),
+    PomodoroEvent (..),
+    PomodoroState (Pause, Rest, Work),
+    Profile (..),
+    currentControlList,
+    currentPomodoroState,
+    currentProfile,
+    currentTimer,
+    defaultAppProfile,
+    profileId,
+    restTime,
+    workTime,
+  )
 import Utils (sendNotification)
-
-data AppState = AppState
-  { _workTime :: Int,
-    _restTime :: Int,
-    _longRestTime :: Maybe Int,
-    _currentPomodoroState :: PomodoroState,
-    _currentTimer :: Int,
-    _currentControlList :: GenericList String Vector String
-  }
-  deriving (Show)
-
-data PomodoroState = Work | Rest | LongRest | Pause PomodoroState deriving (Eq, Show)
-
-makeLenses ''AppState
 
 makeControlList :: PomodoroState -> GenericList String Vector String
 makeControlList pomodoroState = list "ControlList" (fromList [toggleStopLabel, "Next"]) 1
@@ -131,25 +133,30 @@ decideNewPomodoroState currentState = case currentState ^. currentPomodoroState 
 
 setPomodoroRest :: AppState -> EventM String AppState
 setPomodoroRest currentState = do
-  _ <- liftIO $ sendNotification ("Time to Rest: " <> renderCurrentTimer (currentState ^. restTime))
-  return $ currentState & currentPomodoroState .~ Rest & currentTimer .~ currentState ^. restTime
+  _ <- liftIO $ sendNotification ("Time to Rest: " <> renderCurrentTimer (currentState ^. currentProfile . restTime))
+  return $ currentState & currentPomodoroState .~ Rest & currentTimer .~ currentState ^. currentProfile . restTime
 
 setPomodoroWork :: AppState -> EventM String AppState
 setPomodoroWork currentState = do
-  _ <- liftIO $ sendNotification ("Time to Work: " <> renderCurrentTimer (currentState ^. workTime))
-  return $ currentState & currentPomodoroState .~ Work & currentTimer .~ currentState ^. workTime
+  _ <- liftIO $ sendNotification ("Time to Work: " <> renderCurrentTimer (currentState ^. currentProfile . workTime))
+  return $ currentState & currentPomodoroState .~ Work & currentTimer .~ currentState ^. currentProfile . workTime
+
+setAppProfile :: Profile -> AppState -> AppState
+setAppProfile newProfile state =
+  state
+    & currentProfile .~ newProfile
+    & currentPomodoroState .~ Work
+    & currentTimer .~ (newProfile ^. workTime)
 
 decreasePomodoroTimer :: AppState -> EventM String (Next AppState)
 decreasePomodoroTimer currentState = continue $ currentState & currentTimer -~ 1
-
-data PomodoroEvent = Second
 
 createApp :: App AppState PomodoroEvent String
 createApp =
   App
     { appDraw = drawUI,
       appHandleEvent = handleEvent,
-      appStartEvent = \_ -> return initialAppState,
+      appStartEvent = return,
       appAttrMap = const $ attrMap defAttr [],
       appChooseCursor = neverShowCursor
     }
@@ -157,10 +164,9 @@ createApp =
 initialAppState :: AppState
 initialAppState =
   AppState
-    { _workTime = 1500,
-      _restTime = 300,
-      _longRestTime = Just 900,
-      _currentPomodoroState = Work,
+    { _currentPomodoroState = Work,
       _currentTimer = 1500,
-      _currentControlList = makeControlList Work
+      _currentControlList = makeControlList Work,
+      _currentProfile = defaultAppProfile,
+      _appProfiles = M.fromList [(defaultAppProfile ^. profileId, defaultAppProfile)]
     }
