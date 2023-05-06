@@ -1,5 +1,4 @@
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE TemplateHaskell #-}
 
 module Core (createApp, initialAppState, setAppProfile, buildInitState) where
 
@@ -81,6 +80,11 @@ renderControlListItem isSelected button = hCenter $ str (leftMark <> button <> r
   where
     (leftMark, rightMark) = if isSelected then ("< ", " >") else ("", "")
 
+renderProfileListItem :: Bool -> String -> Widget String
+renderProfileListItem isSelected button = hCenter . padBottom (Pad 1) $ str (leftMark <> button <> rightMark)
+  where
+    (leftMark, rightMark) = if isSelected then ("< ", " >") else ("", "")
+
 drawUI :: AppState -> [Widget String]
 drawUI currentState = case currentState ^. appPage of
   Profiles -> renderProfilePage currentState
@@ -94,7 +98,7 @@ renderMainPage currentState =
             [ padTop (Pad 2) $ str (renderCurrentTimer $ currentState ^. currentTimer),
               padBottom (Pad 2) $ str (show $ currentState ^. currentPomodoroState)
             ],
-        vLimit 15 $ renderList renderControlListItem True (currentState ^. currentControlList)
+        vLimit 15 $ renderList renderProfileListItem True (currentState ^. currentControlList)
       ]
   ]
 
@@ -102,7 +106,7 @@ renderProfilePage :: AppState -> [Widget String]
 renderProfilePage currentState =
   [ center $
       vBox
-        [ vLimit 15 $ renderList renderControlListItem True (currentState ^. currentProfileList)
+        [ vLimit 15 $ renderList renderProfileListItem True (currentState ^. currentProfileList)
         ]
   ]
 
@@ -200,16 +204,19 @@ handleProfileListDelete currentState = do
               newAppProfiles = M.delete (profile ^. profileId) (currentState ^. appProfiles)
               newAppProfileList = getProfileListFromMap newAppProfiles
               newUIProfileList = makeProfileList newAppProfiles
-              newProfile
-                | currentState ^. currentProfile == profile = head newAppProfileList
-                | otherwise = currentState ^. currentProfile
+              (newProfile, newState)
+                | currentState ^. currentProfile == profile =
+                    ( head newAppProfileList,
+                      setAppProfile (head newAppProfileList) currentState
+                    )
+                | otherwise = (currentState ^. currentProfile, currentState)
               profileContainer =
                 ProfileContainer
                   newAppProfiles
                   (newProfile ^. profileId)
           liftIO $ saveProfileConfig profileContainer
           continue
-            ( setAppProfile newProfile currentState
+            ( newState
                 & appProfiles .~ newAppProfiles
                 & currentProfileList .~ newUIProfileList
             )
