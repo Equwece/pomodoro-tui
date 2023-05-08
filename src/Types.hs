@@ -16,9 +16,11 @@ data AppState = AppState
     _currentTimer :: Int,
     _currentControlList :: GenericList String Vector String,
     _currentProfileList :: GenericList String Vector String,
+    _currentEditorList :: GenericList String Vector String,
     _currentProfile :: Profile,
     _appProfiles :: Map UUID Profile,
-    _appPage :: Page
+    _appPage :: Page,
+    _editingProfile :: Profile
   }
   deriving (Show)
 
@@ -46,6 +48,8 @@ instance FromJSON ProfileContainer
 data PomodoroState = Work | Rest | LongRest | Pause PomodoroState deriving (Eq, Show)
 
 data PomodoroEvent = Second
+
+data EditorModType = Increase | Decrease deriving (Eq, Show)
 
 makeLenses ''AppState
 makeLenses ''Profile
