@@ -24,7 +24,7 @@ data AppState = AppState
   }
   deriving (Show)
 
-data Page = Main | Profiles | ProfileEditor deriving (Show)
+data Page = Main | Profiles | ProfileEditor | ProfileCreator deriving (Show)
 
 data Profile = Profile
   { _workTime :: Int,
@@ -33,7 +33,7 @@ data Profile = Profile
     _profileId :: UUID,
     _longRestCount :: Maybe Int
   }
-  deriving (Show, Generic, Eq)
+  deriving (Show, Generic, Eq, Ord)
 
 instance ToJSON Profile
 

@@ -13,7 +13,7 @@ let
       };
     });
   });
-
+ 
   myDevTools = with myNixPkgs; [
     cabal-install 
     haskell-language-server

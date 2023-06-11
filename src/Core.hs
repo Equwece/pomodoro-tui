@@ -25,19 +25,20 @@ import Brick.Widgets.Border (border)
 import Brick.Widgets.Border.Style (unicodeRounded)
 import Brick.Widgets.Center (center, hCenter)
 import Brick.Widgets.List (GenericList (listSelected), handleListEvent, handleListEventVi, list, renderList)
-import Control.Lens ((&), (+~), (-~), (.~), (?~), (^.))
+import Control.Lens ((&), (-~), (.~), (^.))
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import Data.UUID (UUID)
+import Data.UUID.V4 (nextRandom)
 import Data.Vector (Vector, fromList)
 import qualified Graphics.Vty as V
 import Graphics.Vty.Attributes (defAttr)
 import Types
   ( AppState (..),
     EditorModType (Decrease, Increase),
-    Page (Main, ProfileEditor, Profiles),
+    Page (Main, ProfileCreator, ProfileEditor, Profiles),
     PomodoroEvent (..),
     PomodoroState (Pause, Rest, Work),
     Profile (..),
@@ -110,6 +111,7 @@ renderProfileListItem isSelected button = hCenter . padBottom (Pad 1) $ str (lef
 
 drawUI :: AppState -> [Widget String]
 drawUI currentState = case currentState ^. appPage of
+  ProfileCreator -> renderEditorPage currentState
   ProfileEditor -> renderEditorPage currentState
   Profiles -> renderProfilePage currentState
   _ -> renderMainPage currentState
@@ -153,6 +155,7 @@ renderCurrentTimer currentTime = minutes <> ":" <> seconds
 
 handleEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
 handleEvent currentState event = case currentState ^. appPage of
+  ProfileCreator -> handleCreatorPageEvent currentState event
   ProfileEditor -> handleEditorPageEvent currentState event
   Profiles -> handleProfilePageEvent currentState event
   Main -> handleMainPageEvent currentState event
@@ -189,6 +192,13 @@ handleProfilePageEvent currentState event@(VtyEvent ve) = case ve of
     where
       selectedElementNum = fromMaybe 0 (listSelected (currentState ^. currentProfileList))
       newEditingProfile = getProfileListFromMap (currentState ^. appProfiles) !! selectedElementNum
+  (V.EvKey (V.KChar 'n') []) ->
+    continue
+      ( currentState
+          & appPage .~ ProfileCreator
+          & currentEditorList .~ makeEditorList defaultAppProfile
+          & editingProfile .~ defaultAppProfile
+      )
   (V.EvKey (V.KChar 'd') []) -> handleProfileListDelete currentState
   _ -> handleGenericPageEvent currentState event
 handleProfilePageEvent currentState event = handleGenericPageEvent currentState event
@@ -212,7 +222,6 @@ handleEditorPageEvent currentState event@(VtyEvent ve) = case ve of
   (V.EvKey V.KUp []) -> handleEditorListEvents currentState ve
   (V.EvKey V.KDown []) -> handleEditorListEvents currentState ve
   (V.EvKey V.KEsc []) -> do
-    _ <- saveCurrentAppState currentState
     continue
       ( currentState
           & appPage .~ Profiles
@@ -220,6 +229,20 @@ handleEditorPageEvent currentState event@(VtyEvent ve) = case ve of
       )
   _ -> handleGenericPageEvent currentState event
 handleEditorPageEvent currentState event = handleGenericPageEvent currentState event
+
+handleCreatorPageEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
+handleCreatorPageEvent currentState (VtyEvent (V.EvKey (V.KChar 's') [])) = do
+  newId <- liftIO nextRandom
+  let newProfile = (currentState ^. editingProfile) {_profileId = newId}
+      newAppProfiles = M.insert newId newProfile (currentState ^. appProfiles)
+      newAppState = currentState & appProfiles .~ newAppProfiles
+  _ <- saveCurrentAppState newAppState
+  continue
+    ( newAppState
+        & appPage .~ Profiles
+        & currentProfileList .~ makeProfileList (newAppState ^. appProfiles)
+    )
+handleCreatorPageEvent currentState event = handleEditorPageEvent currentState event
 
 handleGenericPageEvent :: AppState -> BrickEvent String PomodoroEvent -> EventM String (Next AppState)
 handleGenericPageEvent currentState be@(VtyEvent ve) = case ve of
@@ -312,13 +335,26 @@ handleEditorMod currentState modType = continue result
     longRestModifier Nothing = case modType of
       Increase -> Just 1
       Decrease -> Nothing
+
+    longRestUpdate updateResult = checkResult
+      where
+        isEnabled (Just _) = True
+        isEnabled Nothing = False
+        checkResult
+          | isEnabled (updateResult ^. longRestTime)
+              && isEnabled (updateResult ^. longRestCount) =
+              updateResult
+          | otherwise = case modType of
+              Decrease -> updateResult & longRestCount .~ Nothing & longRestTime .~ Nothing
+              Increase -> updateResult & longRestCount .~ Just 1 & longRestTime .~ Just 0
+
     selectedElement = listSelected (currentState ^. currentEditorList)
     profile = currentState ^. editingProfile
     updatedProfile = case selectedElement of
       Just 0 -> profile & workTime .~ modifier (profile ^. workTime)
       Just 1 -> profile & restTime .~ modifier (profile ^. restTime)
-      Just 2 -> profile & longRestCount .~ longRestModifier (profile ^. longRestCount)
-      Just 3 -> profile & longRestTime .~ longRestModifier (profile ^. longRestTime)
+      Just 2 -> longRestUpdate $ profile & longRestCount .~ longRestModifier (profile ^. longRestCount)
+      Just 3 -> longRestUpdate $ profile & longRestTime .~ longRestModifier (profile ^. longRestTime)
       _ -> profile
     newUIlist = (makeEditorList updatedProfile) {listSelected = selectedElement}
     newProfileMap = M.update (const (Just updatedProfile)) (updatedProfile ^. profileId) (currentState ^. appProfiles)
