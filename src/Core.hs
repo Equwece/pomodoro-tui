@@ -132,7 +132,8 @@ renderProfilePage :: AppState -> [Widget String]
 renderProfilePage currentState =
   [ center $
       vBox
-        [ vLimit 15 $ renderList renderProfileListItem True (currentState ^. currentProfileList)
+        [ vLimit 15 $ renderList renderProfileListItem True (currentState ^. currentProfileList),
+          vLimit 15 . hCenter $ str "esc - back, e - edit, n - new, d - delete"
         ]
   ]
 
@@ -140,7 +141,8 @@ renderEditorPage :: AppState -> [Widget String]
 renderEditorPage currentState =
   [ center $
       vBox
-        [ vLimit 15 $ renderList renderProfileListItem True (currentState ^. currentEditorList)
+        [ vLimit 15 $ renderList renderProfileListItem True (currentState ^. currentEditorList),
+          vLimit 15 . hCenter $ str "esc - back, s - save, ←  decrease, →  increase"
         ]
   ]
 
@@ -346,7 +348,7 @@ handleEditorMod currentState modType = continue result
               updateResult
           | otherwise = case modType of
               Decrease -> updateResult & longRestCount .~ Nothing & longRestTime .~ Nothing
-              Increase -> updateResult & longRestCount .~ Just 1 & longRestTime .~ Just 0
+              Increase -> updateResult & longRestCount .~ Just 1 & longRestTime .~ Just 900
 
     selectedElement = listSelected (currentState ^. currentEditorList)
     profile = currentState ^. editingProfile
