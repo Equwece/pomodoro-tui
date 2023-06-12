@@ -5,7 +5,9 @@
 Minimalistic Pomodoro timer TUI based on the
 [[https://github.com/jtdaugherty/brick][brick]] library.
 
-#+caption: Main view
+** Screenshots
+
+#+caption: Main screen
 [[./screenshots/1.png]]
 
 ** Getting Started
