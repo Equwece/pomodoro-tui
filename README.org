@@ -1,0 +1,47 @@
+* Pomodoro TUI
+:PROPERTIES:
+:CUSTOM_ID: pomodoro-tui
+:END:
+Minimalistic Pomodoro timer TUI based on the
+[[https://github.com/jtdaugherty/brick][brick]] library.
+
+#+caption: Main view
+[[./screenshots/1.png]]
+
+** Getting Started
+:PROPERTIES:
+:CUSTOM_ID: getting-started
+:END:
+*** Setup development environment
+:PROPERTIES:
+:CUSTOM_ID: setup-development-environment
+:END:
+The project uses Nix to manage dependencies, including development ones.
+To get a terminal session with the valid development dependencies in
+$PATH use:
+
+#+begin_src sh
+nix-shell
+#+end_src
+
+*** Build application
+:PROPERTIES:
+:CUSTOM_ID: build-application
+:END:
+#+begin_src sh
+nix-build
+#+end_src
+
+** Built With
+:PROPERTIES:
+:CUSTOM_ID: built-with
+:END:
+- [[https://github.com/jtdaugherty/brick][brick]] - Terminal UI library.
+- [[https://github.com/rblaze/haskell-dbus][haskell-dbus]] - Client
+  library for the D-Bus
+
+** License
+:PROPERTIES:
+:CUSTOM_ID: license
+:END:
+The code in this project is licensed under LGPLv3 license.
